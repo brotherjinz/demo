@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:context="http://www.springframework.org/schema/context" xmlns:aop="http://www.springframework.org/schema/aop" xmlns:tx="http://www.springframework.org/schema/tx" xmlns:util="http://www.springframework.org/schema/util" xsi:schemaLocation="
+		 http://www.springframework.org/schema/beans
+         http://www.springframework.org/schema/beans/spring-beans-3.0.xsd
+         http://www.springframework.org/schema/context
+         http://www.springframework.org/schema/context/spring-context-3.0.xsd
+         http://www.springframework.org/schema/aop
+         http://www.springframework.org/schema/aop/spring-aop-3.0.xsd
+              http://www.springframework.org/schema/util http://www.springframework.org/schema/util/spring-util.xsd
+         http://www.springframework.org/schema/tx
+         http://www.springframework.org/schema/tx/spring-tx.xsd">
+	<!-- 自动扫面注解包 -->
+	<context:annotation-config />
+	<context:component-scan base-package="com.web"><context:exclude-filter type="regex" expression="com.web.info.controller.*" /> </context:component-scan>
+	<!-- 在applicationContext.xml中只加载除表现层之外的所有bean，因此下面一行中不需要加载@Controller -->
+	<!-- 扫描注解Bean 不包括@Controller(表现层) 保证@Service @Repository的属性被注入 -->
+	<!-- <context:component-scan base-package="com.web">
+		<context:exclude-filter type="regex" expression="com.web.info.controller,com.web.info.controller.department,com.web.info.controller.Dispatch,com.web.info.controller.shipment" />
+	</context:component-scan>
+ -->
+	<!-- 默认数据库，此项目 -->
+	<bean id="default_db" class="org.apache.commons.dbcp.BasicDataSource" destroy-method="close" lazy-init="default">
+		<property name="driverClassName" value="oracle.jdbc.driver.OracleDriver" />
+		<property name="url" value="jdbc:oracle:thin:@localhost/orcl" />
+		<property name="username" value="scott" />
+		<property name="password" value="tiger" />
+	</bean>
+	 <!-- 配置数据源 -->
+       <!--  <bean id="default_db" class="org.apache.commons.dbcp.BasicDataSource">
+              <property name="driverClassName" value="com.mysql.cj.jdbc.Driver"></property>
+              <property name="url" value="jdbc:mysql://localhost:3306/test2?serverTimezone=UTC&amp;characterEncoding=utf-8&amp;userUnicode=true&amp;userSSL=false&amp;allowPublicKeyRetireval=true"></property>
+              <property name="username" value="root"></property>
+              <property name="password" value="123456"></property>
+        </bean> -->
+
+	<!-- jdbc模板 -->
+	<bean id="jdbcTemplate" class="org.springframework.jdbc.core.JdbcTemplate">
+		<constructor-arg ref="dataSource" />
+	</bean>
+	<!-- jdbc命名参数模板 -->
+	<bean id="namedParameterJdbcTemplate" class="org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate">
+		<constructor-arg ref="dataSource" />
+	</bean>
+	<bean id="applicationContextHelper" class="com.web.util.ApplicationContextHelper" />
+	<!-- 配置文件的配置多数源映射关系 -->
+	<bean id="dataSource" class="com.web.util.DynamicDataSource">
+		<property name="targetDataSources">
+			<map key-type="java.lang.String">
+				<!-- <entry key="tfds" value-ref="tfds" /> -->
+				<!-- <entry key="default_db" value-ref="default_db" /> -->
+			</map>
+		</property>
+		<!-- 设置默认数据源 -->
+		<property name="defaultTargetDataSource" ref="default_db">
+		</property>
+	</bean>
+	<!-- 配置sessionFactory -->
+	<bean id="sessionFactory" class="org.springframework.orm.hibernate4.LocalSessionFactoryBean">
+		<property name="dataSource" ref="dataSource" />
+		<property name="packagesToScan">
+			<list>
+				<value>com.web.info.model</value>
+			</list>
+		</property>
+		<property name="hibernateProperties">
+			<props>
+<!-- 			org.hibernate.dialect.OracleDialect -->
+				<!-- <prop key="hibernate.dialect">org.hibernate.dialect.MySQL5Dialect</prop> -->
+				<prop key="hibernate.dialect">org.hibernate.dialect.OracleDialect</prop>
+				<prop key="hibernate.show_sql">true</prop>
+				<!-- 会自动创表，但是不会自动创建数据库，所以要先手动创建数据库。 -->
+				<prop key="hibernate.format_sql">false</prop>
+				<!-- <prop key="hibernate.autoReconnect">true</prop> -->
+				<!-- 创建表，首次启动是需要创建表 -->
+<!-- 				<prop key="hibernate.hbm2ddl.auto">create</prop> -->
+				<!-- 在数据库中生成表，用的时候开 -->
+				<prop key="hibernate.hbm2ddl.auto">update</prop>
+			</props>
+		</property>
+	</bean>
+	<bean id="hibernateTemplate" class="org.springframework.orm.hibernate4.HibernateTemplate">
+		<property name="sessionFactory" ref="sessionFactory" />
+	</bean>
+	<!-- 配置事务管理 -->
+	<bean id="txManager" class="org.springframework.orm.hibernate4.HibernateTransactionManager">
+		<property name="sessionFactory" ref="sessionFactory" />
+		<property name="dataSource" ref="dataSource" />
+	</bean>
+	<!-- 开启事务管理注解 -->
+	<aop:config expose-proxy="true">
+		<aop:pointcut id="bussinessService" expression="execution(public * com.web.*.service..*.*(..))" />
+		<aop:advisor pointcut-ref="bussinessService" advice-ref="txAdvice" />
+	</aop:config>
+	<tx:advice id="txAdvice" transaction-manager="txManager">
+		<tx:attributes>
+			<!-- readonly只读，确认事务中没有插入更新删除等操作，确认了readonly String会对 creatConnection优化，提高执行效率 -->
+			<tx:method name="exists" read-only="true" />
+			<tx:method name="detail*" read-only="true" />
+			<tx:method name="save*" propagation="REQUIRED" />
+			<tx:method name="add*" propagation="REQUIRED" />
+			<tx:method name="update*" propagation="REQUIRED" />
+			<tx:method name="delete*" propagation="REQUIRED" />
+			<tx:method name="deleteById*" propagation="REQUIRED" />
+		</tx:attributes>
+	</tx:advice>
+	<!-- 启动Annotation式事务支持 -->
+	<tx:annotation-driven transaction-manager="txManager" />
+	<tx:annotation-driven mode="aspectj" />
+	<!-- getGlobalContext -->
+	<bean id="globalContext" class="com.web.util.SpringContext" />
+
+</beans>
